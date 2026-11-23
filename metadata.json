@@ -1,0 +1,6 @@
+{
+  "name": "KairoIA",
+  "description": "Application Android de robot IA financier avec dépôts et retraits SEPA par IBAN via Stripe à partir de 10 €.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

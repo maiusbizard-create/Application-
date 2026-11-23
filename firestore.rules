@@ -1,0 +1,172 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidRiskProfile(profile) {
+      return profile in ['PRUDENT', 'EQUILIBRE', 'DYNAMIQUE'];
+    }
+
+    function isValidUserWallet(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+             (!('stripeCustomerId' in data) || (data.stripeCustomerId is string && data.stripeCustomerId.size() <= 80)) &&
+             (!('savedIbanMasked' in data) || (data.savedIbanMasked is string && data.savedIbanMasked.size() <= 40)) &&
+             data.balanceCents is int && data.balanceCents >= 0 && data.balanceCents <= 1000000000 &&
+             data.pendingDepositCents is int && data.pendingDepositCents >= 0 && data.pendingDepositCents <= 1000000000 &&
+             data.botActive is bool &&
+             data.botRiskProfile is string && isValidRiskProfile(data.botRiskProfile) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSepaTransaction(data, expectedUserId) {
+      return data.userId is string &&
+             data.userId == expectedUserId &&
+             data.type in ['DEPOSIT', 'WITHDRAWAL'] &&
+             data.amountCents is int && data.amountCents >= 1000 && data.amountCents <= 100000000 &&
+             data.currency == 'EUR' &&
+             data.ibanMasked is string && data.ibanMasked.size() >= 4 && data.ibanMasked.size() <= 40 &&
+             data.accountHolderName is string && data.accountHolderName.size() >= 2 && data.accountHolderName.size() <= 80 &&
+             data.stripeId is string && data.stripeId.size() >= 3 && data.stripeId.size() <= 100 &&
+             data.status in ['PROCESSING', 'SUCCEEDED', 'FAILED', 'CANCELED'] &&
+             data.balanceCredited is bool &&
+             (!('failureReason' in data) || (data.failureReason is string && data.failureReason.size() <= 300)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAiAnalysis(data, expectedUserId) {
+      return data.userId is string &&
+             data.userId == expectedUserId &&
+             data.riskProfile is string && isValidRiskProfile(data.riskProfile) &&
+             data.recommendedAction is string && data.recommendedAction.size() >= 2 && data.recommendedAction.size() <= 60 &&
+             data.riskScore is int && data.riskScore >= 1 && data.riskScore <= 10 &&
+             (data.projectedYieldPercent is int || data.projectedYieldPercent is float) &&
+             data.projectedYieldPercent >= 0.0 && data.projectedYieldPercent <= 100.0 &&
+             data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 2000 &&
+             data.allocationsText is string && data.allocationsText.size() >= 1 && data.allocationsText.size() <= 3000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidBotMessage(data, expectedUserId) {
+      return data.userId is string &&
+             data.userId == expectedUserId &&
+             data.sender in ['USER', 'BOT'] &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 4000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'balanceCents', 'pendingDepositCents', 'botActive', 'botRiskProfile', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'stripeCustomerId', 'savedIbanMasked', 'balanceCents', 'pendingDepositCents', 'botActive', 'botRiskProfile', 'createdAt', 'updatedAt']) &&
+                       isValidUserWallet(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserWallet(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().email == existing().email &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName',
+                         'stripeCustomerId',
+                         'savedIbanMasked',
+                         'balanceCents',
+                         'pendingDepositCents',
+                         'botActive',
+                         'botRiskProfile',
+                         'updatedAt'
+                       ]);
+
+      allow delete: if false;
+
+      match /transactions/{txId} {
+        allow get: if isOwner(userId) && isValidId(txId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(txId) &&
+                         incoming().keys().hasAll(['userId', 'type', 'amountCents', 'currency', 'ibanMasked', 'accountHolderName', 'stripeId', 'status', 'balanceCredited', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'type', 'amountCents', 'currency', 'ibanMasked', 'accountHolderName', 'stripeId', 'status', 'balanceCredited', 'failureReason', 'createdAt', 'updatedAt']) &&
+                         isValidSepaTransaction(incoming(), userId);
+
+        // Terminal state locking: only PROCESSING transactions can transition status
+        allow update: if isOwner(userId) &&
+                         isValidId(txId) &&
+                         isValidSepaTransaction(incoming(), userId) &&
+                         existing().status == 'PROCESSING' &&
+                         (!existing().balanceCredited || incoming().balanceCredited == true) &&
+                         incoming().userId == existing().userId &&
+                         incoming().type == existing().type &&
+                         incoming().amountCents == existing().amountCents &&
+                         incoming().currency == existing().currency &&
+                         incoming().ibanMasked == existing().ibanMasked &&
+                         incoming().accountHolderName == existing().accountHolderName &&
+                         incoming().stripeId == existing().stripeId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'balanceCredited', 'failureReason', 'updatedAt']);
+
+        allow delete: if false;
+      }
+
+      match /ai_analyses/{analysisId} {
+        allow get: if isOwner(userId) && isValidId(analysisId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(analysisId) &&
+                         incoming().keys().hasAll(['userId', 'riskProfile', 'recommendedAction', 'riskScore', 'projectedYieldPercent', 'summary', 'allocationsText', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'riskProfile', 'recommendedAction', 'riskScore', 'projectedYieldPercent', 'summary', 'allocationsText', 'createdAt']) &&
+                         isValidAiAnalysis(incoming(), userId);
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(analysisId);
+      }
+
+      match /bot_messages/{msgId} {
+        allow get: if isOwner(userId) && isValidId(msgId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(msgId) &&
+                         incoming().keys().hasAll(['userId', 'sender', 'text', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'sender', 'text', 'createdAt']) &&
+                         isValidBotMessage(incoming(), userId);
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(msgId);
+      }
+    }
+  }
+}

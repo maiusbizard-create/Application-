@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "UserWallet": {
+      "title": "UserWallet",
+      "description": "Portefeuille utilisateur KairoIA et configuration du Robot IA.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID du propriétaire." },
+        "displayName": { "type": "string", "description": "Nom affiché de l'utilisateur." },
+        "email": { "type": "string", "description": "Adresse email vérifiée Google." },
+        "stripeCustomerId": { "type": "string", "description": "Identifiant client Stripe (cus_...)." },
+        "savedIbanMasked": { "type": "string", "description": "IBAN masqué pour l'affichage." },
+        "balanceCents": { "type": "integer", "description": "Solde disponible en centimes d'euro (>= 0)." },
+        "pendingDepositCents": { "type": "integer", "description": "Montant des dépôts SEPA en cours de compensation." },
+        "botActive": { "type": "boolean", "description": "Indique si le Robot IA est actif." },
+        "botRiskProfile": {
+          "type": "string",
+          "enum": ["PRUDENT", "EQUILIBRE", "DYNAMIQUE"],
+          "description": "Profil de risque sélectionné pour le Robot IA."
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date de création serveur (FieldValue.serverTimestamp)." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Date de mise à jour serveur (FieldValue.serverTimestamp)." }
+      },
+      "required": ["userId", "displayName", "email", "balanceCents", "pendingDepositCents", "botActive", "botRiskProfile", "createdAt", "updatedAt"]
+    },
+    "SepaTransaction": {
+      "title": "SepaTransaction",
+      "description": "Transaction réelle Stripe SEPA (dépôt ou retrait par IBAN >= 10,00 EUR).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID du propriétaire." },
+        "type": { "type": "string", "enum": ["DEPOSIT", "WITHDRAWAL"], "description": "Type de flux bancaire." },
+        "amountCents": { "type": "integer", "description": "Montant en centimes d'euro (>= 1000 soit 10,00 EUR)." },
+        "currency": { "type": "string", "enum": ["EUR"], "description": "Devise SEPA." },
+        "ibanMasked": { "type": "string", "description": "IBAN masqué pour le suivi." },
+        "accountHolderName": { "type": "string", "description": "Titulaire du compte bancaire." },
+        "stripeId": { "type": "string", "description": "Identifiant Stripe PaymentIntent ou Payout." },
+        "status": { "type": "string", "enum": ["PROCESSING", "SUCCEEDED", "FAILED", "CANCELED"], "description": "Statut Stripe." },
+        "balanceCredited": { "type": "boolean", "description": "Indique si le solde du portefeuille a déjà été ajusté." },
+        "failureReason": { "type": "string", "description": "Motif d'échec retourné par Stripe." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date de création serveur." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Date de mise à jour serveur." }
+      },
+      "required": ["userId", "type", "amountCents", "currency", "ibanMasked", "accountHolderName", "stripeId", "status", "balanceCredited", "createdAt", "updatedAt"]
+    },
+    "AiAnalysisRecord": {
+      "title": "AiAnalysisRecord",
+      "description": "Analyse et allocation générées par le Robot IA Gemini.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID du propriétaire." },
+        "riskProfile": { "type": "string", "enum": ["PRUDENT", "EQUILIBRE", "DYNAMIQUE"] },
+        "recommendedAction": { "type": "string", "description": "Action recommandée par le Robot IA." },
+        "riskScore": { "type": "integer", "description": "Score de risque de 1 à 10." },
+        "projectedYieldPercent": { "type": "number", "description": "Rendement annuel estimé en pourcentage." },
+        "summary": { "type": "string", "description": "Synthèse détaillée de l'analyse." },
+        "allocationsText": { "type": "string", "description": "Répartition recommandée formatée." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date de création serveur." }
+      },
+      "required": ["userId", "riskProfile", "recommendedAction", "riskScore", "projectedYieldPercent", "summary", "allocationsText", "createdAt"]
+    },
+    "BotChatMessage": {
+      "title": "BotChatMessage",
+      "description": "Message de conversation avec KairoBot.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID du propriétaire." },
+        "sender": { "type": "string", "enum": ["USER", "BOT"] },
+        "text": { "type": "string", "description": "Contenu du message." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date de création serveur." }
+      },
+      "required": ["userId", "sender", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserWallet" },
+      "description": "Portefeuille et préférences du Robot IA de l'utilisateur."
+    },
+    "/users/{userId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/SepaTransaction" },
+      "description": "Historique des dépôts et retraits SEPA IBAN via Stripe."
+    },
+    "/users/{userId}/ai_analyses/{analysisId}": {
+      "schema": { "$ref": "#/entities/AiAnalysisRecord" },
+      "description": "Analyses de portefeuille produites par le Robot IA."
+    },
+    "/users/{userId}/bot_messages/{msgId}": {
+      "schema": { "$ref": "#/entities/BotChatMessage" },
+      "description": "Historique des échanges avec le Robot IA."
+    }
+  }
+}

@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">KairoIA</string>
+    <string name="tagline">Robot IA &amp; Virements SEPA Stripe dès 10 €</string>
+    <string name="sign_in_google">Continuer avec Google</string>
+    <string name="sign_out">Se déconnecter</string>
+    <string name="min_amount_notice">Montant minimum : 10,00 €</string>
+</resources>
